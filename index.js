@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken')
 require('dotenv').config();
 const port = process.env.PORT || 5000;
 const app = express();
@@ -24,6 +25,25 @@ const client = new MongoClient(uri, {
   }
 });
 
+function verifyJwt(req,res,next) {
+  const authHeaders = req.headers.authorization;
+  //console.log(authHeaders);
+
+  if(!authHeaders){
+    return res.status(401).send({message: 'unauthorize access'});
+  }
+  const token = authHeaders.split(' ')[1];
+  //console.log(token);
+
+  jwt.verify(token,process.env.ACCESS_SECRET_TOKEN,function(err,decoded){
+    if(err) {
+      return res.status(403).send({message: 'Forbidden access'});
+    }
+    req.decoded = decoded;
+    next();
+  })
+}
+
 async function run() {
   try {
     const database = client.db('carDoctor');
@@ -39,6 +59,15 @@ async function run() {
       
     })
 
+
+    //console.log(process.env.ACCESS_SECRET_TOKEN);
+    app.post('/jwt',(req,res)=> {
+      const user = req.body;
+      const token = jwt.sign(user,process.env.ACCESS_SECRET_TOKEN,{expiresIn:'1d'})
+      res.send({token});
+      //console.log(user);
+    })
+
     app.get('/services/:id',async(req,res)=> {
       const id = req.params.id;
       const query = {_id: new ObjectId(id)}
@@ -48,7 +77,7 @@ async function run() {
 
     })
 
-    app.post('/services/:id',async(req,res)=> {
+    app.post('/services/:id',verifyJwt,async(req,res)=> {
       const data = req.body;
       const result = await orders.insertOne(data);
 
@@ -58,8 +87,14 @@ async function run() {
 
     })
 
-    app.get('/orders',async(req,res)=> {
+    app.get('/orders',verifyJwt,async(req,res)=> {
       
+      //console.log('order inside' , req.headers);
+      const decoded = req.decoded;
+      //console.log(decoded);
+      if(decoded.email !== req.query.email){
+        res.status(403).send({message: 'unauthorized access'})
+      }
       let query = {};
       if(req.query?.email) {
         query = {
@@ -72,7 +107,7 @@ async function run() {
 
     })
 
-    app.delete('/orders/:id',async(req,res)=> {
+    app.delete('/orders/:id',verifyJwt,async(req,res)=> {
       const id = req.params.id;
       const query = {_id:new ObjectId(id)}
       const result = await orders.deleteOne(query);
@@ -80,7 +115,7 @@ async function run() {
       //console.log(result);
     })
 
-    app.patch('/orders/:id',async(req,res)=> {
+    app.patch('/orders/:id',verifyJwt,async(req,res)=> {
       const id =req.params.id;
       const query = {_id : new ObjectId(id)}
       const updateDoc = {
